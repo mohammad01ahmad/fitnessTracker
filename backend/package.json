@@ -4,15 +4,20 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "start": "node src/whatsapp/socket.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
     "@supabase/supabase-js": "^2.110.6",
-    "baileys": "^7.0.0-rc13"
+    "@whiskeysockets/baileys": "^7.0.0-rc13",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "devDependencies": {
+    "@types/qrcode-terminal": "^0.12.2"
   }
 }
