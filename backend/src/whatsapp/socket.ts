@@ -2,6 +2,8 @@
 import makeWASocket, { DisconnectReason, jidNormalizedUser, useMultiFileAuthState } from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
+import MessageHandler from './messageHandler.ts'
+import { getNutritionEstimate } from '../claude/openrouter_client.ts'
 
 async function connectToWhatsApp() {
 
@@ -40,14 +42,21 @@ async function connectToWhatsApp() {
         for (const m of messages) {
             const text = m.message?.conversation ?? m.message?.extendedTextMessage?.text ?? ''
 
-            // Only /calories commands. This is also what breaks the reply-to-self loop:
-            // our own replies don't start with /calories, so they're skipped.
-            if (!text.trim().toLowerCase().startsWith('/calories')) continue
-            const meal = text.trim().slice('/calories'.length).trim()
-            console.log('meal to log:', meal)
+            // extract meal from message
+            const meal = MessageHandler(text.trim())
+            if (!meal) continue
 
-            // ponytail: echo placeholder until Claude + Supabase are wired (PRD §14)
-            await sock.sendMessage(m.key.remoteJid!, { text: `(demo) got: ${meal}` })
+            // send to LLM to extract meal nutrition information
+            try {
+                const n = await getNutritionEstimate(meal)
+                await sock.sendMessage(m.key.remoteJid!, {
+                    text: `${n.meal_type}: ${n.calories} kcal | P ${n.protein_g}g C ${n.carbs_g}g F ${n.fat_g}g (${n.confidence})`
+                })
+            } catch (error) {
+                console.error('failed to estimate meal: ', error)
+                await sock.sendMessage(m.key.remoteJid!, { text: `Unexpected Error in LLM call: ${(error as Error).message}` })
+                continue
+            }
         }
     })
 
