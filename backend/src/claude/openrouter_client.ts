@@ -1,15 +1,7 @@
-export type Nutrition = {
-    food_items: { name: string; quantity: number; unit: string }[]
-    calories: number
-    protein_g: number
-    carbs_g: number
-    fat_g: number
-    confidence: 'high' | 'medium' | 'low'
-    meal_type: 'breakfast' | 'lunch' | 'dinner' | 'snack'
-}
+import type { Nutrition } from "../utils/constants.ts"
 
 // plain JSON Schema — OpenRouter is OpenAI-compatible, not Gemini-compatible
-const schema = {
+export const nutritionSchema = {
     type: "object",
     properties: {
         food_items: {
@@ -27,12 +19,10 @@ const schema = {
         },
         calories: { type: "number" },
         protein_g: { type: "number" },
-        carbs_g: { type: "number" },
-        fat_g: { type: "number" },
         confidence: { type: "string", enum: ["high", "medium", "low"] },
-        meal_type: { type: "string", enum: ["breakfast", "lunch", "dinner", "snack"] }
+        meal_time: { type: "string", enum: ["Breakfast", "Lunch", "Dinner", "Snack"] }
     },
-    required: ["food_items", "calories", "protein_g", "carbs_g", "fat_g", "confidence", "meal_type"],
+    required: ["food_items", "calories", "protein_g", "confidence", "meal_time"],
     additionalProperties: false
 }
 
@@ -47,12 +37,16 @@ export async function getNutritionEstimate(mealText: string): Promise<Nutrition>
             model: "openai/gpt-oss-20b",
             max_tokens: 1024,
             messages: [
-                { role: "system", content: "Role: You are a nutrition estimator. Task: Given a short meal description, estimate calories and macros for the food described and return it in the given schema." },
+                { role: "system", content: "Role: You are a nutrition estimator. Task: Given a short meal description, estimate calories and macros (only protein) for the food described and return it in the given schema. And also classify the meal type based on the input" },
                 { role: "user", content: mealText }
             ],
             response_format: {
                 type: "json_schema",
-                json_schema: { name: "nutrition", strict: true, schema }
+                json_schema: {
+                    name: "nutrition",
+                    strict: true,
+                    schema: nutritionSchema // enforce strict json format
+                }
             }
         })
     })

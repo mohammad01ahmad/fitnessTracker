@@ -4,6 +4,7 @@ import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
 import MessageHandler from './messageHandler.ts'
 import { getNutritionEstimate } from '../claude/openrouter_client.ts'
+import { populateTable } from '../db/meals.ts'
 
 async function connectToWhatsApp() {
 
@@ -39,7 +40,13 @@ async function connectToWhatsApp() {
     // listening to events: when receiving a message
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return // ignore history replayed on (re)connect
+        // Baileys 7 routes self-chat by LID, not the phone-number JID — accept either
+        const meJids = [sock.user!.id, sock.user!.lid].filter(Boolean).map(j => jidNormalizedUser(j!))
+
         for (const m of messages) {
+            // self-chat only — any other chat could otherwise log meals and spend the API key
+            if (!m.key.fromMe || !meJids.includes(jidNormalizedUser(m.key.remoteJid!))) continue
+
             const text = m.message?.conversation ?? m.message?.extendedTextMessage?.text ?? ''
 
             // extract meal from message
@@ -49,12 +56,18 @@ async function connectToWhatsApp() {
             // send to LLM to extract meal nutrition information
             try {
                 const n = await getNutritionEstimate(meal)
+
+                // insert before replying — a confirmation must mean the row landed (PRD §8)
+                const row = await populateTable({ ...n, whatsapp_message_id: m.key.id!, raw_message_text: meal })
+                if (!row) continue // already logged; don't confirm twice
+
                 await sock.sendMessage(m.key.remoteJid!, {
-                    text: `${n.meal_type}: ${n.calories} kcal | P ${n.protein_g}g C ${n.carbs_g}g F ${n.fat_g}g (${n.confidence})`
+                    text: `${n.meal_time}: ${n.calories} kcal | P ${n.protein_g}g Confidence: ${n.confidence}`
                 })
+
             } catch (error) {
-                console.error('failed to estimate meal: ', error)
-                await sock.sendMessage(m.key.remoteJid!, { text: `Unexpected Error in LLM call: ${(error as Error).message}` })
+                console.error('Failed to estimate meal: ', error)
+                await sock.sendMessage(m.key.remoteJid!, { text: `Unexpected Error: ${(error as Error).message}` })
                 continue
             }
         }
