@@ -1,4 +1,4 @@
-# PRD: WhatsApp Calorie & Macro Tracker
+# WhatsApp Calorie & Macro Tracker
 
 **Owner:** Ahmad
 **Status:** Draft v6
@@ -472,7 +472,7 @@ Ordered the way this actually gets built: data layer and core logic first (so ea
 23. Spot-check a handful of logged meals against known values to sanity-check the LLM's estimates (ties back to the estimate-accuracy success metric in Section 4) — extra weight here given the free-model reliability trade-off.
 24. Add basic error visibility (structured logs viewable via `pm2 logs`, or a lightweight crash alert) so silent failures don't go unnoticed.
 
-## 16. Open items for v2 (not in this PRD's scope)
+## 16. Open items for v2 (not in this scope)
 
 - Voice message logging (transcription pipeline)
 - Image-based food logging
