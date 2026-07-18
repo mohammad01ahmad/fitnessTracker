@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
+// YO
 // Session cookie persists 30 days regardless of the JWT's own (short) expiry;
 // proxy.ts refreshes the underlying token on every request.
 const THIRTY_DAYS = 60 * 60 * 24 * 30;
