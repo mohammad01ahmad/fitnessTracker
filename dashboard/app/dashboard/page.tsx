@@ -2,6 +2,7 @@ import { supabase } from "@/db/client";
 import { ActivityRing, WeeklyBars, MonthlyHeatmap, DateStrip } from "./widgets";
 import { CALORIE_TARGET, PROTEIN_TARGET } from "@/constants/constants";
 import { addDays, aggregateMeals } from "@/utility/hooks";
+import { signOut } from "../../utility/authHooks";
 
 // Server component: fetches all meals, aggregates them for the date in
 // ?date=, and lays out the bento grid. No client JS on this page.
@@ -41,6 +42,11 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                     .area-mp { grid-area: mp; }
                 }
             `}</style>
+            <form action={signOut} className="fixed top-4 right-4 z-20 md:top-6 md:right-6">
+                <button type="submit" className="text-xs font-medium text-[#8A8894] hover:text-[#16151A]">
+                    Sign out
+                </button>
+            </form>
             <div className="dashboard-grid mx-auto max-w-4xl md:h-full">
                 <div className="area-rc">
                     <ActivityRing
