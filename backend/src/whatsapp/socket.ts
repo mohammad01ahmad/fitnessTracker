@@ -5,13 +5,15 @@ import qrcode from 'qrcode-terminal'
 import MessageHandler from './messageHandler.ts'
 import { getNutritionEstimate } from '../claude/openrouter_client.ts'
 import { populateTable } from '../db/meals.ts'
+import { logger } from '../utils/logger.js'
 
 async function connectToWhatsApp() {
 
     // configuration and setup
     const { state, saveCreds } = await useMultiFileAuthState('./auth_session') // loads previous states from auth_session
     const sock = makeWASocket({
-        auth: state
+        auth: state,
+        logger // also silences/controls Baileys' own internal pino logs via LOG_LEVEL
     })
 
     // listening to events: when connection state changes
@@ -24,16 +26,17 @@ async function connectToWhatsApp() {
         // if disconnected
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut
-            console.log('connection closed due to ', lastDisconnect?.error, ', reconnecting ', shouldReconnect)
+            logger.warn({ err: lastDisconnect?.error, reconnecting: shouldReconnect }, 'WhatsApp connection closed')
             // reconnect if not logged out
             if (shouldReconnect) {
                 connectToWhatsApp()
             }
 
-            //  if connected successfully 
+            //  if connected successfully
         } else if (connection === 'open') {
-            console.log('opened connection')
+            logger.info('WhatsApp connection opened')
             sock.sendMessage(jidNormalizedUser(sock.user!.id), { text: 'Connection successful ✅' })
+                .catch((error) => logger.error({ err: error }, 'Failed to send connection confirmation'))
         }
     })
 
@@ -66,7 +69,7 @@ async function connectToWhatsApp() {
                 })
 
             } catch (error) {
-                console.error('Failed to estimate meal: ', error)
+                logger.error({ err: error }, 'Failed to estimate meal')
                 await sock.sendMessage(m.key.remoteJid!, { text: `Unexpected Error: ${(error as Error).message}` })
                 continue
             }

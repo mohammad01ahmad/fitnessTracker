@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import type { Nutrition } from './openrouter_client.ts';
+import type { Nutrition } from '../utils/constants.ts';
 
 const genAI = new GoogleGenAI({
     apiKey: process.env.GEMINI_API_KEY
