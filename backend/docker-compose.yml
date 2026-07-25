@@ -1,0 +1,10 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      # Baileys session credentials — must survive container recreation on
+      # every redeploy, or the bot loses its WhatsApp link and needs a fresh
+      # QR scan. Never baked into the image (see .dockerignore).
+      - ./auth_session:/app/auth_session
