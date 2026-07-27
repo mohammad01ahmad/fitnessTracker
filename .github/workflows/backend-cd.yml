@@ -32,8 +32,6 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     steps:
-      # No checkout here — the runner doesn't push code anywhere, the VM
-      # pulls it itself. This job just tells the VM to update and restart.
       - name: SSH in and redeploy
         uses: appleboy/ssh-action@v1
         with:

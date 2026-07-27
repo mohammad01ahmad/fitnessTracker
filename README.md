@@ -1,8 +1,8 @@
 # WhatsApp Calorie & Macro Tracker
 
 **Owner:** Ahmad
-**Status:** Draft v6
-**Last updated:** July 17, 2026
+**Status:** Draft v7
+**Last updated:** July 27, 2026
 
 ---
 
@@ -118,11 +118,11 @@ await sock.sendMessage(msg.key.remoteJid, {
 
 Baileys requires an **always-on process**, not a stateless serverless function — the socket connection must stay alive to keep receiving events. This isn't just a latency preference (as it was framed for the old Twilio webhook design) — it's now a hard requirement.
 
-**Decision:** host on an **Oracle Cloud "Always Free" VM**, not a PaaS like Railway/Render/Fly.io. Those were the initial suggestion, but none of them offer a genuinely free tier suited to a persistent socket connection: Railway and Fly.io removed their free tiers entirely (roughly $5/month minimum), and Render's free tier spins services down after 15 minutes of inactivity, which would kill the WhatsApp connection. Oracle's Always Free tier includes a small VM that runs indefinitely at zero cost with no sleep/spin-down behavior, at the cost of managing a real Linux server yourself instead of a git-push deploy flow.
+**Decision:** host on a **GCP "Always Free" e2-micro VM**, not a PaaS like Railway/Render/Fly.io. Those were the initial suggestion, but none of them offer a genuinely free tier suited to a persistent socket connection: Railway and Fly.io removed their free tiers entirely (roughly $5/month minimum), and Render's free tier spins services down after 15 minutes of inactivity, which would kill the WhatsApp connection. GCP's Always Free tier includes a small VM that runs indefinitely at zero cost with no sleep/spin-down behavior (originally planned for Oracle Cloud's equivalent Always Free VM; moved to GCP), at the cost of managing a real Linux server yourself instead of a git-push deploy flow.
 
 ## 9. LLM call structure (OpenRouter)
 
-**Model decision:** `openai/gpt-oss-20b:free` via OpenRouter, replacing the originally-planned Claude Haiku integration. Reason for the switch: the Claude API is billed pay-as-you-go with no relation to any Claude.ai subscription, and OpenRouter's free tier eliminates that cost entirely for this low-volume use case (roughly 150-200 calls/month). Trade-off accepted knowingly: free open-weight models are less reliable at strict structured-output/tool-calling than Claude's forced `tool_choice`, so output should be validated (see Section 14, Phase 3) before trusting it unattended.
+**Model decision:** `openai/gpt-oss-20b:free` via OpenRouter, replacing the originally-planned Claude Haiku integration. Reason for the switch: the Claude API is billed pay-as-you-go with no relation to any Claude.ai subscription, and OpenRouter's free tier eliminates that cost entirely for this low-volume use case (roughly 150-200 calls/month). Trade-off accepted knowingly: free open-weight models are less reliable at strict structured-output/tool-calling than Claude's forced `tool_choice`, so output should be validated (see Section 15, Phase 3) before trusting it unattended.
 
 Single-turn, stateless call per meal, no conversation history sent — same shape as the original design, just a different provider and a different SDK (OpenRouter is OpenAI-compatible, so the `openai` npm package is used, pointed at OpenRouter's base URL, rather than the Anthropic SDK).
 
@@ -237,7 +237,7 @@ on meals for select
 using (auth.uid() = user_id);
 ```
 
-Only a `select` policy is needed — the dashboard only ever reads. Writes come exclusively from the backend using the **service role key**, which bypasses RLS by design, so no `insert` policy is required for normal operation. The service role key must never be exposed to the browser — it lives only in `backend/.env` on the Oracle VM, never in the dashboard.
+Only a `select` policy is needed — the dashboard only ever reads. Writes come exclusively from the backend using the **service role key**, which bypasses RLS by design, so no `insert` policy is required for normal operation. The service role key must never be exposed to the browser — it lives only in `backend/.env` on the GCP VM, never in the dashboard.
 
 ### Hardcoded targets (backend + dashboard config)
 
@@ -265,7 +265,7 @@ This is the one part of the stack where the earlier `@supabase/ssr` boilerplate 
 
 ## 12. Project file structure
 
-A single monorepo, since both halves are small and personal, but cleanly separated so the backend (runs on the Oracle VM) and dashboard (deploys to Vercel) don't get tangled. Dashboard uses Next.js App Router conventions.
+A single monorepo, since both halves are small and personal, but cleanly separated so the backend (runs on the GCP VM) and dashboard (deploys to Vercel) don't get tangled. Dashboard uses Next.js App Router conventions.
 
 ```
 whatsapp-calorie-tracker/
@@ -285,10 +285,12 @@ whatsapp-calorie-tracker/
 │   │   ├── config/
 │   │   │   └── targets.js           # hardcoded TARGETS (3000 kcal / 120g protein)
 │   │   └── utils/
-│   │       └── logger.js            # structured logs, readable via pm2 logs
+│   │       └── logger.js            # structured pino logs
 │   ├── auth_session/                # Baileys credentials — gitignored, treated as a secret
 │   ├── .env.example                 # OPENROUTER_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, TARGET_USER_ID
-│   ├── ecosystem.config.js          # pm2 process config
+│   ├── Dockerfile                   # single-stage, node:25-slim — no build step, Node strips TS at runtime
+│   ├── docker-compose.yml           # restart: unless-stopped + auth_session/ bind mount
+│   ├── .dockerignore
 │   └── package.json
 │
 ├── dashboard/
@@ -326,6 +328,11 @@ whatsapp-calorie-tracker/
 │
 ├── docs/
 │   └── PRD_whatsapp_calorie_tracker.md
+│
+├── .github/
+│   └── workflows/
+│       ├── backend-cd.yml           # typechecks, then SSHes into the GCP VM and redeploys via docker compose
+│       └── dashboard-ci-cd.yml
 │
 ├── .gitignore                       # auth_session/, .env, .env.local, node_modules, .next
 └── README.md
@@ -377,52 +384,69 @@ Notes:
 
 4. **Persist the auth session.** `useMultiFileAuthState` writes session credentials to a local folder (`./auth_session` above) so the process doesn't need re-pairing on every restart. The Baileys docs flag this specific helper as demo-only and not production-safe — for anything longer-lived, session state should be persisted somewhere durable (e.g., encrypted and stored in Supabase or a mounted volume on the host), since losing it means re-scanning the QR code and, more importantly, treating that saved session data as a credential, not a log file — anyone with it can access the linked WhatsApp account.
 
-5. **Deploy on an Oracle Cloud Always Free VM** (see Section 14) rather than a serverless or auto-sleeping platform, since the socket connection needs to persist. Make sure the auth-session storage survives reboots (it will, since it's a persistent VM, not an ephemeral container) — losing that folder forces a new QR scan.
+5. **Deploy on a GCP Always Free e2-micro VM** (see Section 14) rather than a serverless or auto-sleeping platform, since the socket connection needs to persist. Make sure the auth-session storage survives reboots (it will, since it's a persistent VM, not an ephemeral container) — losing that folder forces a new QR scan.
 
 6. **Filter and process messages** inside `handleIncomingMessage`, applying the self-chat filter, idempotency check, and `/calories` prefix check described in Section 8, then calling OpenRouter and writing to Supabase.
 
-## 14. Getting started with Oracle Cloud Always Free
+## 14. Getting started with GCP Always Free
 
-Oracle's Always Free tier includes small compute instances that run indefinitely at zero cost — no 30-day trial, no spin-down. Note: Oracle reduced the ARM (Ampere A1) Always Free allocation in June 2026 from 4 OCPUs/24GB RAM down to 2 OCPUs/12GB RAM, and Ampere capacity can be hard to get in busy regions ("out of capacity" errors on creation). Since this app is a single lightweight Node process, the simpler path is the **AMD-based `VM.Standard.E2.1.Micro` shape** — smaller (1/8 OCPU burstable, 1GB RAM), but part of Always Free with no capacity contention, and comfortably enough to run Baileys plus the backend logic.
+GCP's Always Free tier includes one small Compute Engine instance that runs indefinitely at zero cost — no 30-day trial, no spin-down — in specific US regions (`us-central1`, `us-west1`, `us-east1`). The actual VM used for this project:
 
-1. **Sign up** at oracle.com/cloud/free. A credit card is required for identity verification (a temporary ~$1 hold, not a charge), and you'll be asked to pick a **Home Region** — choose carefully, since Always Free resources are locked to that region and it can't be changed later.
+- **Machine type:** `e2-micro`
+- **Boot disk:** Ubuntu 24.04 LTS (x86/64, amd64), 10GB, `pd-standard` (Balanced Persistent Disk)
+- **Region/zone:** `us-central1-a`
 
-2. **Create a network.** Console → Networking → Virtual Cloud Networks → Start VCN Wizard → "Create VCN with Internet Connectivity." This one-click wizard sets up everything needed (subnet, internet gateway) for the VM to be reachable.
+1. **Create the VM.** Console → Compute Engine → VM instances → Create Instance, with the specs above. Confirm a public/external IP is assigned, and note it.
 
-3. **Create the VM.** Console → Compute → Instances → Create Instance:
-   - Image: **Canonical Ubuntu 24.04**
-   - Shape: **VM.Standard.E2.1.Micro** (AMD, Always Free, no capacity issues) — or `VM.Standard.A1.Flex` (ARM) if more headroom is wanted and available in your region
-   - SSH keys: let Oracle generate a key pair and **download the private key immediately** — it can't be retrieved again
-   - Confirm "Assign a public IPv4 address" is toggled on
-   - Create the instance and note its public IP
+2. **Connect via SSH-in-browser** — the Console's "SSH" button opens a browser-based terminal directly against the VM. No local private key or `.pem` file to manage, unlike Oracle's setup.
 
-4. **Connect over SSH:**
+3. **Clone the repo** (public, so no credential needed) and create the env file:
    ```bash
-   chmod 600 path/to/private_key.pem
-   ssh -i path/to/private_key.pem ubuntu@<public-ip>
+   git clone https://github.com/mohammad01ahmad/fitnessTracker.git
+   cd fitnessTracker
+   nano backend/.env   # OPENROUTER_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_USER_ID
    ```
 
-5. **Install Node.js and a process manager:**
+4. **Install Docker** — no system Node install needed at all, the container brings its own (see `backend/Dockerfile`, pinned to `node:25-slim`):
    ```bash
-   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-   sudo apt-get install -y nodejs git
-   sudo npm install -g pm2
+   curl -fsSL https://get.docker.com | sudo sh
+   sudo usermod -aG docker $USER
+   newgrp docker   # or log out/back in — group membership doesn't apply to an already-open session
    ```
 
-6. **Deploy the backend**, install dependencies, and set environment variables (`OPENROUTER_API_KEY`, Supabase URL + service role key, `TARGET_USER_ID`) in a `.env` file.
-
-7. **First run interactively** to pair Baileys — `node index.js` in the SSH session, so the QR code prints to the terminal and can be scanned from the phone (WhatsApp → Linked Devices).
-
-8. **Run it persistently under pm2**, so it survives SSH disconnects and VM reboots:
+5. **First run in the foreground**, so the QR code is visible to scan:
    ```bash
-   pm2 start index.js --name calorie-bot
-   pm2 startup
-   pm2 save
+   cd ~/fitnessTracker/backend
+   docker compose up --build
    ```
+   Scan it from WhatsApp → Linked Devices → Link a Device. Wait for `"WhatsApp connection opened"` in the logs and confirm `auth_session/` now has files in it — that's the Baileys session persisting to the bind-mounted host directory.
 
-9. **No inbound firewall rules needed.** Unlike a webhook-based design, this process only makes outbound connections (to WhatsApp, OpenRouter, and Supabase) — nothing needs to reach it from the internet, so Oracle's default security list doesn't need opening up.
+6. **Switch to detached, persistent mode:**
+   ```bash
+   # Ctrl+C first, then:
+   docker compose up -d
+   ```
+   `restart: unless-stopped` in `docker-compose.yml` means it survives VM reboots and crashes on its own — the same job `pm2 startup`/`pm2 save` would otherwise be doing.
 
-10. **Set a budget alert** (Console → Billing & Cost Management → Budgets) so an email arrives if usage ever threatens to exceed Always Free limits — a safety net against surprise charges even though staying within Always Free resources should never trigger a bill.
+7. **No inbound firewall rules needed.** Unlike a webhook-based design, this process only makes outbound connections (to WhatsApp, OpenRouter, and Supabase) — nothing needs to reach it from the internet, so GCP's default firewall rules don't need opening up.
+
+8. **Set a budget alert** (Console → Billing → Budgets & alerts) so an email arrives if usage ever threatens to exceed Always Free limits — a safety net against surprise charges even though staying within Always Free resources should never trigger a bill.
+
+9. **(Optional) automatic deploys.** `.github/workflows/backend-cd.yml` typechecks every push to `main` touching `backend/`, then SSHes in and runs `git fetch && git reset --hard && docker compose up -d --build` on the VM — set up once via three repo secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`).
+
+### If the connection breaks
+
+If the linked device gets removed on the WhatsApp side (e.g. the account itself was deleted or reset on the phone), the bot's own reconnect logic will **not** retry automatically — `socket.ts` deliberately checks for `DisconnectReason.loggedOut` and treats that as a permanent disconnect, not a transient one worth auto-retrying. Restoring it means a fresh pairing, same as the very first setup:
+
+```bash
+cd ~/fitnessTracker/backend
+docker compose down
+sudo rm -rf auth_session/*   # sudo needed — the container writes these files as root
+docker compose up             # foreground again, to see + scan the new QR
+# once auth_session/ is repopulated and "WhatsApp connection opened" appears,
+# Ctrl+C, then:
+docker compose up -d
+```
 
 ## 15. Build plan
 
@@ -454,10 +478,10 @@ Ordered the way this actually gets built: data layer and core logic first (so ea
 13. Run end-to-end locally with real messages for a day or two before deploying anywhere, so bugs surface while it's still easy to restart and debug on-machine.
 
 ### Phase 6 — Infrastructure
-14. Set up the Oracle Cloud Always Free VM (account, network, instance, SSH) per Section 14.
-15. Install Node, git, pm2 on the VM; deploy the backend code.
-16. Re-pair Baileys on the server (fresh QR scan — the local session doesn't transfer); verify messages flow through the deployed version.
-17. Run under pm2 with `pm2 startup` + `pm2 save` so it survives reboots; set the Oracle budget alert.
+14. Set up the GCP Always Free e2-micro VM (instance, SSH-in-browser) per Section 14.
+15. Install Docker on the VM; clone the repo; create `backend/.env`.
+16. Re-pair Baileys on the server (fresh QR scan — the local session doesn't transfer) via `docker compose up --build` in the foreground; verify messages flow through the deployed version.
+17. Switch to `docker compose up -d` (its `restart: unless-stopped` policy survives reboots and crashes on its own); set the GCP budget alert.
 
 *Rationale for deploying at this point, not earlier: no reason to provision and manage a server before the thing running on it actually works.*
 
@@ -470,7 +494,7 @@ Ordered the way this actually gets built: data layer and core logic first (so ea
 ### Phase 8 — Live use and hardening
 22. Use it for real for a stretch of days; watch for parsing mistakes, missed messages, or crashes.
 23. Spot-check a handful of logged meals against known values to sanity-check the LLM's estimates (ties back to the estimate-accuracy success metric in Section 4) — extra weight here given the free-model reliability trade-off.
-24. Add basic error visibility (structured logs viewable via `pm2 logs`, or a lightweight crash alert) so silent failures don't go unnoticed.
+24. Add basic error visibility (structured pino logs viewable via `docker compose logs -f`, or a lightweight crash alert) so silent failures don't go unnoticed.
 
 ## 16. Open items for v2 (not in this scope)
 
