@@ -3,6 +3,7 @@ import { logger } from "./utils/logger.js";
 // Entry point. Registers process-level safety nets before the socket
 // connects, so a crash always leaves a log line explaining why — otherwise
 // this is invisible until the process is silently dead on the server.
+// Test
 process.on("uncaughtException", (error) => {
     logger.fatal({ err: error }, "Uncaught exception, exiting for a clean restart");
     process.exit(1);
