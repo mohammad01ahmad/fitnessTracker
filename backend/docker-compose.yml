@@ -8,3 +8,11 @@ services:
       # every redeploy, or the bot loses its WhatsApp link and needs a fresh
       # QR scan. Never baked into the image (see .dockerignore).
       - ./auth_session:/app/auth_session
+    # Docker's json-file default is UNBOUNDED — the 13h reconnect loop on
+    # 2026-07-29 wrote log lines every ~120ms straight to the VM's disk with
+    # nothing to stop it. Cap at 30MB total.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
