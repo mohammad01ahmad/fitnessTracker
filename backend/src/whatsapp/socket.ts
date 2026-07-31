@@ -1,5 +1,5 @@
 
-import makeWASocket, { DisconnectReason, jidNormalizedUser, useMultiFileAuthState } from '@whiskeysockets/baileys'
+import makeWASocket, { DisconnectReason, fetchLatestWaWebVersion, jidNormalizedUser, useMultiFileAuthState } from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
 import qrcode from 'qrcode-terminal'
 import MessageHandler from './messageHandler.ts'
@@ -11,7 +11,16 @@ async function connectToWhatsApp(retry = 0) {
 
     // configuration and setup
     const { state, saveCreds } = await useMultiFileAuthState('./auth_session') // loads previous states from auth_session
+
+    // Baileys pins a WA web version at publish time (Defaults/index.js). Once WA
+    // retires that revision it answers 405 at the *registration* handshake — no QR
+    // is ever emitted. This reads the live revision out of web.whatsapp.com/sw.js
+    // and falls back to the pinned one if the fetch fails; it never throws.
+    const { version, isLatest } = await fetchLatestWaWebVersion({})
+    if (!isLatest) logger.warn({ version }, 'could not fetch live WA version, using the version pinned in Baileys')
+
     const sock = makeWASocket({
+        version,
         auth: state,
         logger // also silences/controls Baileys' own internal pino logs via LOG_LEVEL
     })
@@ -36,7 +45,11 @@ async function connectToWhatsApp(retry = 0) {
             // Failure", location odn), which isn't in DisconnectReason, so the old
             // immediate retry treated it as recoverable and hammered harder.
             // ponytail: capped exponential, no jitter — one client, no herd to thunder
-            const wait = Math.min(2 ** retry * 1000, 60_000)
+            // Before pairing completes nothing is written to auth_session, so each
+            // retry registers a *brand new* device identity. A burst of those from
+            // one IP is itself a 405 trigger, so don't start fast when unpaired.
+            const backoff = Math.min(2 ** retry * 1000, 60_000)
+            const wait = state.creds.me ? backoff : Math.max(backoff, 60_000)
             logger.warn({ err: lastDisconnect?.error, reconnecting: shouldReconnect, retryInMs: wait }, 'WhatsApp connection closed')
             // reconnect if not logged out
             if (shouldReconnect) {

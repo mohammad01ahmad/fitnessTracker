@@ -2,7 +2,9 @@ node_modules/
 .env
 .env.local
 .next/
-backend/auth_session/
+# glob, not an exact name: `auth_session.bak` slipped past the bare
+# `auth_session/` rule and got committed on 2026-07-31.
+backend/auth_session*/
 .DS_Store
 
 .claude/
