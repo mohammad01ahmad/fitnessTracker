@@ -28,6 +28,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Reconnect policy only — pure, no network or DB. test-db.ts stays manual
+      # because it hits the real Supabase table.
+      - name: Test
+        run: npm test
+
   deploy:
     needs: verify
     runs-on: ubuntu-latest

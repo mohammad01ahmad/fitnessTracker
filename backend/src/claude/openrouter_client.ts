@@ -29,6 +29,7 @@ export const nutritionSchema = {
 export async function getNutritionEstimate(mealText: string): Promise<Nutrition> {
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
+        signal: AbortSignal.timeout(30_000), // a hung request otherwise blocks the message indefinitely — no confirmation, no error, no log line
         headers: {
             'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
             'Content-Type': 'application/json'

@@ -1,7 +1,10 @@
 services:
   bot:
     build: .
-    restart: unless-stopped
+    # unless-stopped restarts on ANY exit, including a clean exit(0) — leaving no
+    # way for the app to say "stop, this needs a human." on-failure only restarts
+    # non-zero exits, and caps the count so a boot-time crash loop can't run forever.
+    restart: on-failure:10
     env_file: .env
     volumes:
       # Baileys session credentials — must survive container recreation on

@@ -2,7 +2,7 @@
 
 **Owner:** Ahmad
 **Status:** Draft v7
-**Last updated:** July 27, 2026
+**Last updated:** July 31, 2026
 
 ---
 
@@ -274,7 +274,10 @@ whatsapp-calorie-tracker/
 │   │   ├── index.js                 # entry point — starts the Baileys socket, wires up the event handler
 │   │   ├── whatsapp/
 │   │   │   ├── socket.js            # makeWASocket setup, auth state, connection.update handling
-│   │   │   └── messageHandler.js    # self-chat filter, idempotency check, /calories prefix parsing
+│   │   │   ├── messageHandler.js    # self-chat filter, idempotency check, /calories prefix parsing
+│   │   │   ├── reconnect.js         # pure backoff/terminal-state policy — unit-tested without a live socket
+│   │   │   ├── fatal.js             # the one place allowed to process.exit; picks the code Docker's restart policy reacts to
+│   │   │   └── constants.js         # reconnect/backoff/watchdog tuning knobs, kept with their reasoning comments
 │   │   ├── llm/
 │   │   │   ├── client.js            # OpenAI SDK init, pointed at OpenRouter's base URL
 │   │   │   ├── logMealTool.js       # the log_meal tool schema (Section 9)
@@ -289,7 +292,7 @@ whatsapp-calorie-tracker/
 │   ├── auth_session/                # Baileys credentials — gitignored, treated as a secret
 │   ├── .env.example                 # OPENROUTER_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, TARGET_USER_ID
 │   ├── Dockerfile                   # single-stage, node:25-slim — no build step, Node strips TS at runtime
-│   ├── docker-compose.yml           # restart: unless-stopped + auth_session/ bind mount
+│   ├── docker-compose.yml           # restart: on-failure:10, capped json-file logging, auth_session/ bind mount
 │   ├── .dockerignore
 │   └── package.json
 │
@@ -426,7 +429,7 @@ GCP's Always Free tier includes one small Compute Engine instance that runs inde
    # Ctrl+C first, then:
    docker compose up -d
    ```
-   `restart: unless-stopped` in `docker-compose.yml` means it survives VM reboots and crashes on its own — the same job `pm2 startup`/`pm2 save` would otherwise be doing.
+   `restart: on-failure:10` in `docker-compose.yml` restarts the container automatically on a crash (non-zero exit), up to 10 times in a row, doing the same job `pm2 startup`/`pm2 save` would otherwise do. This replaced an earlier `unless-stopped` policy, which retried forever regardless of exit code — a clean `exit(0)`, which the bot now uses for unrecoverable states like dead WhatsApp credentials, is treated as a deliberate stop and is **not** retried.
 
 7. **No inbound firewall rules needed.** Unlike a webhook-based design, this process only makes outbound connections (to WhatsApp, OpenRouter, and Supabase) — nothing needs to reach it from the internet, so GCP's default firewall rules don't need opening up.
 
@@ -436,7 +439,7 @@ GCP's Always Free tier includes one small Compute Engine instance that runs inde
 
 ### If the connection breaks
 
-If the linked device gets removed on the WhatsApp side (e.g. the account itself was deleted or reset on the phone), the bot's own reconnect logic will **not** retry automatically — `socket.ts` deliberately checks for `DisconnectReason.loggedOut` and treats that as a permanent disconnect, not a transient one worth auto-retrying. Restoring it means a fresh pairing, same as the very first setup:
+If the linked device gets removed on the WhatsApp side (e.g. the account itself was deleted or reset on the phone), the bot's own reconnect logic will **not** retry automatically — `reconnect.ts` treats certain close-status codes as permanent rather than retrying forever against something that can never work: 401/403/419 (dead credentials) and 500/411 (a broken session) both exit for good. A related but different case, 440 (another session took over the same linked device), *does* retry — but only after a 5-minute cooldown, so the bot and the other session stop fighting over the same connection. Restoring after a permanent disconnect means a fresh pairing, same as the very first setup:
 
 ```bash
 cd ~/fitnessTracker/backend
