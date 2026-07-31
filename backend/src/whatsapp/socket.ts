@@ -5,7 +5,6 @@ import qrcode from 'qrcode-terminal'
 import MessageHandler from './messageHandler.ts'
 import { reconnectPlan } from './reconnect.ts'
 import { fatal } from './fatal.ts'
-import { WATCHDOG_CHECK_MS, WATCHDOG_IDLE_MS } from './constants.ts'
 import { getNutritionEstimate } from '../claude/openrouter_client.ts'
 import { populateTable } from '../db/meals.ts'
 import { logger } from '../utils/logger.js'
@@ -41,9 +40,13 @@ async function connectToWhatsApp(retry = 0, refetchVersion = true) {
         // sends no polls and keeps none, so there's nothing to resupply.
         // ponytail: always undefined — add an in-memory cache of sent messages if resend requests start showing up in logs.
         getMessage: async () => undefined,
-        // The type!=='notify' filter below discards replayed history anyway; this
-        // stops Baileys downloading and processing it first — pure waste on 1GB RAM.
-        shouldSyncHistoryMessage: () => false,
+        // Deliberately NOT overriding shouldSyncHistoryMessage: disabling all sync
+        // types blocks the history-sync path that populates LID mappings (Baileys
+        // warns loudly about this — "DANGER... LEADING TO INSTABILIY AND SESSION
+        // ERRORS" — and it's not idle caution; a 2026-07-31 incident confirmed it).
+        // The library's own default already excludes the expensive FULL history
+        // type, so the memory concern that motivated overriding this is already
+        // handled without cutting off LID mapping sync.
         // Default true marks the client "online," which suppresses phone push
         // notifications — including for this bot's own confirmation replies.
         markOnlineOnConnect: false
@@ -54,17 +57,15 @@ async function connectToWhatsApp(retry = 0, refetchVersion = true) {
     let closed = false
     // 0 until 'open'; used to tell a healthy session's drop from an open→close flap.
     let openedAt = 0
-    // Separate from openedAt: starts now, not 0, so a fresh process gets a full
-    // watchdog grace window before its first successful open.
-    let lastOpenAt = Date.now()
 
-    // Nothing throws or rejects when the socket is alive but stuck — this is the
-    // only thing that notices that case.
-    const watchdog = setInterval(() => {
-        if (Date.now() - lastOpenAt > WATCHDOG_IDLE_MS) {
-            fatal(null, 'no open connection in 15m', { retryable: true, delayMs: 30_000 })
-        }
-    }, WATCHDOG_CHECK_MS).unref()
+    // No app-level "is it wedged" watchdog here on purpose: Baileys' own keepalive
+    // (Socket/socket.js) pings every 30s and self-closes with
+    // DisconnectReason.connectionLost (408) if the server goes quiet for 35s —
+    // that 408 isn't in any of reconnect.ts's terminal sets, so it already flows
+    // through the normal backoff path below. A from-scratch timer here previously
+    // fired unconditionally ~15min after every successful open, healthy or not
+    // (confirmed by a 2026-07-31 incident) — it was racing a faster, correct
+    // mechanism that already existed, not covering a real gap.
 
     // listening to events: when connection state changes
     sock.ev.on('connection.update', (update) => {
@@ -77,7 +78,6 @@ async function connectToWhatsApp(retry = 0, refetchVersion = true) {
         if (connection === 'close') {
             if (closed) return
             closed = true
-            clearInterval(watchdog)
 
             // Detach immediately, not after the backoff wait — a dead socket
             // otherwise keeps its handlers live for up to 60s.
@@ -120,7 +120,6 @@ async function connectToWhatsApp(retry = 0, refetchVersion = true) {
             //  if connected successfully
         } else if (connection === 'open') {
             openedAt = Date.now() // backoff resets only if this session lasts, see reconnect.ts
-            lastOpenAt = openedAt
             logger.info('WhatsApp connection opened')
             sock.sendMessage(jidNormalizedUser(sock.user!.id), { text: 'Connection successful ✅' })
                 .catch((error) => logger.error({ err: error }, 'Failed to send connection confirmation'))

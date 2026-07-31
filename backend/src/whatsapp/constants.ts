@@ -1,6 +1,5 @@
-// Tuning knobs for the WhatsApp socket lifecycle — reconnect policy (reconnect.ts)
-// and connection watchdog (socket.ts). Kept together so the numbers that shape
-// "when do we give up / retry / declare wedged" are all in one place.
+// Tuning knobs for the WhatsApp reconnect policy (reconnect.ts) — when to give
+// up vs. retry, and how long to wait.
 
 /** 401/403/419 — Baileys' UNAUTHORIZED_CODES. Creds are dead; only a QR scan fixes it. */
 export const UNAUTHORIZED = [401, 403, 419]
@@ -19,8 +18,3 @@ export const REPLACED = 440
 export const STABLE_MS = 60_000
 
 export const MAX_WAIT_MS = 60_000
-
-// How long a socket can go without an 'open' before it's assumed wedged — alive
-// but unusable, with nothing throwing for index.js's global handlers to catch.
-export const WATCHDOG_IDLE_MS = 15 * 60_000
-export const WATCHDOG_CHECK_MS = 60_000
