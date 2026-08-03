@@ -9,7 +9,7 @@ import { getNutritionEstimate } from '../claude/openrouter_client.ts'
 import { populateTable } from '../db/meals.ts'
 import { logger } from '../utils/logger.js'
 
-async function connectToWhatsApp(retry = 0, refetchVersion = true) {
+async function connectToWhatsApp(retry = 0, refetchVersion = true, isFirstConnect = true) {
 
     // configuration and setup
     const { state, saveCreds } = await useMultiFileAuthState('./auth_session') // loads previous states from auth_session
@@ -113,7 +113,7 @@ async function connectToWhatsApp(retry = 0, refetchVersion = true) {
             }
 
             setTimeout(() => {
-                connectToWhatsApp(plan.retry, statusCode === 405)
+                connectToWhatsApp(plan.retry, statusCode === 405, false)
                     .catch(e => fatal(e, 'reconnect chain died', { retryable: true, delayMs: 30_000 }))
             }, plan.wait)
 
@@ -121,8 +121,13 @@ async function connectToWhatsApp(retry = 0, refetchVersion = true) {
         } else if (connection === 'open') {
             openedAt = Date.now() // backoff resets only if this session lasts, see reconnect.ts
             logger.info('WhatsApp connection opened')
-            sock.sendMessage(jidNormalizedUser(sock.user!.id), { text: 'Connection successful ✅' })
-                .catch((error) => logger.error({ err: error }, 'Failed to send connection confirmation'))
+            // Only ping on the very first connect of this process — automatic
+            // reconnects are routine (WA-side blips, brief network hiccups) and
+            // don't need a WhatsApp message every time one resolves in a few seconds.
+            if (isFirstConnect) {
+                sock.sendMessage(jidNormalizedUser(sock.user!.id), { text: 'Connection successful ✅' })
+                    .catch((error) => logger.error({ err: error }, 'Failed to send connection confirmation'))
+            }
         }
     })
 
