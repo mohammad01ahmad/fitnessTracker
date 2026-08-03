@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node --env-file=.env src/index.js",
     "typecheck": "tsc",
-    "test": "node tests/test-backoff.ts"
+    "test": "node tests/test-backoff.ts && node tests/test-progress.ts"
   },
   "keywords": [],
   "author": "",

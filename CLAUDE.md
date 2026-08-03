@@ -39,10 +39,13 @@ No test framework. Both are plain assert scripts, not a suite. `test-db.ts` hits
 3. `messageHandler.ts` regex-matches `/calories\b` (case-insensitive) and returns the stripped text, or `undefined`.
 4. `openrouter_client.ts` → OpenRouter chat/completions with a strict `json_schema` response format and a 30s timeout, returns `Nutrition`.
 5. `db/meals.ts` inserts **before** replying — a confirmation must mean the row landed.
+6. `db/meals.ts`'s `dayTotals()` re-reads today's (Asia/Dubai) rows and the confirmation reply appends a "Progress today" block (`formatProgress` in `utils/constants.ts`) against the hardcoded `DAILY_TARGETS` (3000 kcal / 120g protein) — this is the reason the insert happens before the reply, not just an idempotency concern.
 
 Idempotency is the unique index `meals_whatsapp_message_id_key` in Postgres, not a pre-read: `populateTable` catches error code `23505` and returns `null`, and `socket.ts` treats `null` as "already logged, don't confirm twice". Don't replace this with a select-then-insert. `tests/test-db.ts` is what proves the index still exists — if it's ever dropped, idempotency silently becomes a no-op and every duplicate double-confirms.
 
 If the LLM call or the insert throws, the per-message `catch` sends a generic "something went wrong" reply, not `error.message` — provider/DB error text can carry request details and shouldn't land in the chat log. That send is itself `.catch()`'d: if the socket is already dead (plausible, since something just failed), an unprotected `await` there would escape the `catch` block as an unhandled rejection and take the whole process down over one bad meal log.
+
+`dayTotals()`'s Supabase read is wrapped in its own `.catch()` in `socket.ts`, separate from the outer per-message `catch` above — a totals-read failure must not report a failed log for a meal that was, in fact, already inserted. `DAILY_TARGETS` and the Dubai `+4`-hour (no-DST) day boundary (`dubaiDayStart`) live in `utils/constants.ts`, not the empty `src/config/targets.js` placeholder (see Drift below).
 
 ## Connection lifecycle & reliability
 

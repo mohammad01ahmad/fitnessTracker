@@ -13,3 +13,9 @@ export type MealRow = Nutrition & {
     whatsapp_message_id: string
     raw_message_text: string
 }
+
+// Hardcoded per PRD §6 — editable targets via UI is explicitly out of scope for v1.
+export const DAILY_TARGETS = {
+    calories: 3000,
+    protein_g: 120
+}
