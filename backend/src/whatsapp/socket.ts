@@ -182,20 +182,23 @@ async function connectToWhatsApp(retry = 0, refetchVersion = true, isFirstConnec
                 }
                 log.info({ rowId: row.id }, 'meal row inserted')
 
+                const headerLines = [
+                    `${n.meal_time} — ${n.calories} kcal | ${n.protein_g}g protein`,
+                    `Confidence: ${n.confidence}`
+                ]
+
                 // The row already landed — a failed totals read must not turn a
                 // successful log into "Something went wrong" below, so it's
                 // caught here rather than left to fall into the outer catch.
-                const progress = await dayTotals().then(formatProgress).catch((e) => {
-                    log.error({ err: e }, 'failed to read daily totals')
-                    return ''
-                })
+                const progress = await dayTotals()
+                    .then((totals) => formatProgress(totals, headerLines))
+                    .catch((e) => {
+                        log.error({ err: e }, 'failed to read daily totals')
+                        return ''
+                    })
 
                 await sock.sendMessage(m.key.remoteJid!, {
-                    text: [
-                        `${n.meal_time} — ${n.calories} kcal | ${n.protein_g}g protein`,
-                        `Confidence: ${n.confidence}`,
-                        progress
-                    ].filter(Boolean).join('\n')
+                    text: [...headerLines, progress].filter(Boolean).join('\n')
                 })
                 log.info('confirmation sent')
 

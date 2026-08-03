@@ -17,11 +17,19 @@ function progressLine(label: string, value: number, target: number, unit: string
     return `${label} ${Math.round(value)}/${target}${unit} (${note})`
 }
 
-/** The "Progress today" block appended to the WhatsApp confirmation. */
-export function formatProgress(totals: { calories: number; protein_g: number }): string {
-    return [
-        'Progress today',
+const DIVIDER_CHAR = '-'
+
+/**
+ * The divider + progress block appended to the WhatsApp confirmation.
+ * `headerLines` are the message lines above the divider (meal + confidence) —
+ * passed in so the divider can be sized to the widest line in the whole
+ * message rather than a guessed fixed width.
+ */
+export function formatProgress(totals: { calories: number; protein_g: number }, headerLines: string[]): string {
+    const lines = [
         progressLine('Calories', totals.calories, DAILY_TARGETS.calories, ''),
         progressLine('Protein ', totals.protein_g, DAILY_TARGETS.protein_g, 'g')
-    ].join('\n')
+    ]
+    const width = Math.max(...headerLines.map((l) => l.length), ...lines.map((l) => l.length))
+    return [DIVIDER_CHAR.repeat(width), ...lines].join('\n')
 }
