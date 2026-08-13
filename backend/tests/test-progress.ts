@@ -16,11 +16,19 @@ const utcEarly = Date.parse('2026-08-03T00:30:00Z')
 const utcLater = Date.parse('2026-08-03T03:00:00Z')
 assert.equal(dubaiDayStart(utcEarly), dubaiDayStart(utcLater))
 
-// formatProgress: under, over, and exactly-at target.
-assert.match(formatProgress({ calories: 1400, protein_g: 102 }, []), /Calories 1400\/3000 \(1600 left\)/)
-assert.match(formatProgress({ calories: 1400, protein_g: 102 }, []), /Protein  102\/120g \(18g left\)/)
-assert.match(formatProgress({ calories: 3200, protein_g: 120 }, []), /Calories 3200\/3000 \(200 over\)/)
-assert.match(formatProgress({ calories: 3000, protein_g: 120 }, []), /Calories 3000\/3000 \(0 left\)/)
+// formatProgress: under, over, and exactly-at target — bar fill rounds to
+// the nearest of 10 cells (1400/3000 = 46.7% -> 5 filled, 102/120 = 85% -> 9 filled).
+assert.match(formatProgress({ calories: 1400, protein_g: 102 }, []), /Calories \[█████░░░░░\] 1400\/3000/)
+assert.match(formatProgress({ calories: 1400, protein_g: 102 }, []), /Protein  \[█████████░\] 102\/120g/)
+// Over target clamps the bar full rather than overflowing past 10 cells.
+assert.match(formatProgress({ calories: 3200, protein_g: 120 }, []), /Calories \[██████████\] 3200\/3000/)
+assert.match(formatProgress({ calories: 3000, protein_g: 120 }, []), /Calories \[██████████\] 3000\/3000/)
+
+// Bar lines are wrapped in ``` monospace so the fill bar renders at a fixed
+// width on every device (see formatProgress doc comment).
+const fenced = formatProgress({ calories: 1400, protein_g: 102 }, []).split('\n')
+assert.equal(fenced[1], '```')
+assert.equal(fenced[fenced.length - 1], '```')
 
 // Divider is sized to the widest line — a long header line forces a wider
 // divider than the progress lines alone would need.
@@ -31,6 +39,6 @@ assert.equal(divider.length, 50)
 // With no header (or a short one), the divider still covers the widest
 // progress line rather than collapsing to zero width.
 const [shortDivider] = formatProgress({ calories: 1400, protein_g: 102 }, []).split('\n')
-assert.equal(shortDivider.length, 'Calories 1400/3000 (1600 left)'.length)
+assert.equal(shortDivider.length, 'Calories [█████░░░░░] 1400/3000'.length)
 
 console.log('ok — progress helpers')

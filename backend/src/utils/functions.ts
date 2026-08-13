@@ -11,10 +11,16 @@ export function dubaiDayStart(now = Date.now()): string {
     return new Date(dubaiMidnight - DUBAI_OFFSET_MS).toISOString()
 }
 
+const BAR_CELLS = 10
+
+/** `[██████░░░░]`-style fill bar, `BAR_CELLS` wide, rounded to the nearest cell. */
+function bar(value: number, target: number): string {
+    const filled = Math.round(Math.min(Math.max(value / target, 0), 1) * BAR_CELLS)
+    return '█'.repeat(filled) + '░'.repeat(BAR_CELLS - filled)
+}
+
 function progressLine(label: string, value: number, target: number, unit: string) {
-    const diff = target - Math.round(value)
-    const note = diff >= 0 ? `${diff}${unit} left` : `${-diff}${unit} over`
-    return `${label} ${Math.round(value)}/${target}${unit} (${note})`
+    return `${label} [${bar(value, target)}] ${Math.round(value)}/${target}${unit}`
 }
 
 const DIVIDER_CHAR = '-'
@@ -24,6 +30,12 @@ const DIVIDER_CHAR = '-'
  * `headerLines` are the message lines above the divider (meal + confidence) —
  * passed in so the divider can be sized to the widest line in the whole
  * message rather than a guessed fixed width.
+ *
+ * The bar lines are wrapped in WhatsApp's ``` monospace formatting so the
+ * block-character bar renders at a fixed width on every device — WhatsApp's
+ * default proportional font gives block characters inconsistent widths,
+ * which is what risks the bar overlapping onto the next line on narrow
+ * (mobile) screens even when it looks fine on WhatsApp Web.
  */
 export function formatProgress(totals: { calories: number; protein_g: number }, headerLines: string[]): string {
     const lines = [
@@ -31,5 +43,5 @@ export function formatProgress(totals: { calories: number; protein_g: number }, 
         progressLine('Protein ', totals.protein_g, DAILY_TARGETS.protein_g, 'g')
     ]
     const width = Math.max(...headerLines.map((l) => l.length), ...lines.map((l) => l.length))
-    return [DIVIDER_CHAR.repeat(width), ...lines].join('\n')
+    return [DIVIDER_CHAR.repeat(width), '```', ...lines, '```'].join('\n')
 }
