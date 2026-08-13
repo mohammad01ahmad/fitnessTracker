@@ -23,7 +23,7 @@ function progressLine(label: string, value: number, target: number, unit: string
     return `${label} [${bar(value, target)}] ${Math.round(value)}/${target}${unit}`
 }
 
-const DIVIDER_CHAR = '-'
+const DIVIDER_CHAR = '━'
 
 /**
  * The divider + progress block appended to the WhatsApp confirmation.
@@ -35,7 +35,10 @@ const DIVIDER_CHAR = '-'
  * block-character bar renders at a fixed width on every device — WhatsApp's
  * default proportional font gives block characters inconsistent widths,
  * which is what risks the bar overlapping onto the next line on narrow
- * (mobile) screens even when it looks fine on WhatsApp Web.
+ * (mobile) screens even when it looks fine on WhatsApp Web. The backticks are
+ * fused onto the first/last line rather than put on their own line — a
+ * standalone ``` line is what WhatsApp renders with a blank line above the
+ * fenced content.
  */
 export function formatProgress(totals: { calories: number; protein_g: number }, headerLines: string[]): string {
     const lines = [
@@ -43,5 +46,6 @@ export function formatProgress(totals: { calories: number; protein_g: number }, 
         progressLine('Protein ', totals.protein_g, DAILY_TARGETS.protein_g, 'g')
     ]
     const width = Math.max(...headerLines.map((l) => l.length), ...lines.map((l) => l.length))
-    return [DIVIDER_CHAR.repeat(width), '```', ...lines, '```'].join('\n')
+    const fenced = [`\`\`\`${lines[0]}`, ...lines.slice(1, -1), `${lines[lines.length - 1]}\`\`\``]
+    return [DIVIDER_CHAR.repeat(width), ...fenced].join('\n')
 }
